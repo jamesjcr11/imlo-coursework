@@ -9,6 +9,7 @@ import torch.optim as optim
 import torchvision
 import torchvision.transforms as transforms 
 import torchvision.datasets as datasets
+import copy
 
 torch.manual_seed(42)
 np.random.seed(42)
@@ -16,20 +17,19 @@ np.random.seed(42)
 device = torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else "cpu"
 
 train_transform = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.RandomRotation(5),
-    transforms.RandomResizedCrop(224, scale=(0.8, 1.0)),
+    transforms.Resize((256, 256)),
+    #transforms.RandomRotation(5),
+    #transforms.RandomResizedCrop(224, scale=(0.8, 1.0)),
     transforms.RandomHorizontalFlip(),
-    transforms.RandomRotation(5),
-    transforms.ColorJitter(0.1, 0.1, 0.1),
+    #transforms.ColorJitter(0.1, 0.1, 0.1),
     transforms.ToTensor(),
-    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+    transforms.Normalize((0.485, 0.456, 0.406),(0.229, 0.224, 0.225))
 ])
 
 test_transform = transforms.Compose([
-    transforms.Resize((224, 224)),
+    transforms.Resize((256, 256)),
     transforms.ToTensor(),
-    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+    transforms.Normalize((0.485, 0.456, 0.406),(0.229, 0.224, 0.225))
 ])  
 
 
@@ -95,41 +95,46 @@ class NeuralNet(nn.Module):
         super().__init__()
 
         self.conv1 = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1), 
-            nn.BatchNorm2d(64),
+            nn.Conv2d(3, 32, kernel_size=3, stride=1, padding=1), 
+            nn.BatchNorm2d(32),
             nn.ReLU(),
             nn.MaxPool2d(2)
         )
 
         self.conv2 = nn.Sequential(
-            nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1), 
-            nn.BatchNorm2d(128),
+            nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1), 
+            nn.BatchNorm2d(64),
             nn.ReLU(),
             nn.MaxPool2d(2)
         )
 
         self.conv3 = nn.Sequential(
-            nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1), 
-            nn.BatchNorm2d(256),     
+            nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1), 
+            nn.BatchNorm2d(128),     
             nn.ReLU(),
             nn.MaxPool2d(2)
         )
 
 
         self.conv4 = nn.Sequential(
-            nn.Conv2d(256, 512, kernel_size=3, stride=1, padding=1), 
-            nn.BatchNorm2d(512),
+            nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1), 
+            nn.BatchNorm2d(256),
             nn.ReLU(),
             nn.MaxPool2d(2)
         )
   
         self.pool = nn.MaxPool2d((1, 1))
-        self.gap = nn.AdaptiveAvgPool2d((1, 1))
+        self.gap = nn.AdaptiveAvgPool2d((4, 4))
         
-        self.fc1 = nn.Linear(512, 256)
-        self.fc2 = nn.Linear(256, 37)
+        self.fc1 = nn.Linear(256 * 4 * 4,  1024)
+        self.bn1 = nn.BatchNorm1d(1024)
 
-        self.dropout = nn.Dropout(0.3)
+        self.fc2 = nn.Linear(1024, 512)
+        self.bn2 = nn.BatchNorm1d(512)
+
+        self.fc3 = nn.Linear(512, 37)
+
+        self.dropout = nn.Dropout(0.1)
     
     def forward(self, x):
         x = self.conv1(x)
@@ -141,19 +146,21 @@ class NeuralNet(nn.Module):
         x = self.gap(x)
         x = torch.flatten(x, 1)
 
-        x = F.relu(self.fc1(x))
+        x = F.relu(self.bn1(self.fc1(x)))
         x = self.dropout(x)
 
-        #x = F.relu(self.fc2(x)) 
-        #x = F.dropout(x, 0.3, training=self.training)
-        x = self.fc2(x)
+        x = F.relu(self.bn2(self.fc2(x)))
+        x = F.dropout(x)
+
+        x = self.fc3(x)
         return x
     
 
 net = NeuralNet().to(device)
-loss_function = nn.CrossEntropyLoss(label_smoothing=0.05)       
-optimizer = optim.Adam(net.parameters(), lr=0.001, weight_decay=5e-5)
-scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
+#loss_function = nn.CrossEntropyLoss(label_smoothing=0.05) 
+loss_function = nn.CrossEntropyLoss()      
+optimizer = optim.Adam(net.parameters(), lr=0.001, weight_decay=1e-5)
+scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=30)
 
 best_val_acc = 0.0
 best_state_dict = None
@@ -172,13 +179,15 @@ for epoch in range(30):
         optimizer.step()
 
         running_loss += loss.item()
+        #print(i)
       
     train_acc = get_accuracy(net, train_loader)
     val_acc = get_accuracy(net, val_loader)
 
     if val_acc > best_val_acc:
         best_val_acc = val_acc
-        best_state_dict = net.state_dict().copy()
+        print(best_val_acc)
+        best_state_dict = copy.deepcopy(net.state_dict())
         print(f"Saved best model with val acc: {val_acc:.2f}%")
     print(f"Loss: {running_loss / len(train_loader):.4f}")
     print(f"Train Accuracy: {train_acc:.2f}%")
@@ -188,6 +197,10 @@ for epoch in range(30):
     scheduler.step()
 torch.save(best_state_dict, 'trained_model.pth')
 net.load_state_dict(torch.load("trained_model.pth", map_location=device))
+val_acc_loaded = get_accuracy(net, val_loader)
+
+print(f"Best val accuracy recorded: {best_val_acc:.2f}%")
+print(f"Validation accuracy after loading: {val_acc_loaded:.2f}%")
 test_acc = get_accuracy(net, test_loader)
 
 print(f"Test Accuracy: {test_acc:.2f}%")
