@@ -20,10 +20,11 @@ device = torch.accelerator.current_accelerator().type if torch.accelerator.is_av
 
 train_transform = transforms.Compose([
     transforms.Resize((256, 256)),
-    #transforms.RandomRotation(5),
-    #transforms.RandomResizedCrop(224, scale=(0.8, 1.0)),
+  
+    transforms.RandomResizedCrop(224, scale=(0.7, 1.0)),
     transforms.RandomHorizontalFlip(),
-    #transforms.ColorJitter(0.1, 0.1, 0.1),
+    transforms.RandomRotation(10),
+    transforms.ColorJitter(0.2, 0.2, 0.2),
     transforms.ToTensor(),
     transforms.Normalize((0.485, 0.456, 0.406),(0.229, 0.224, 0.225))
 ])
@@ -146,15 +147,15 @@ class NeuralNet(nn.Module):
         self.pool = nn.MaxPool2d((1, 1))
         self.gap = nn.AdaptiveAvgPool2d((4, 4))
 
-        self.fc1 = nn.Linear(256 * 4 * 4,  1024)
-        self.bn1 = nn.BatchNorm1d(1024)
+        self.fc1 = nn.Linear(256 * 4 * 4,  512)
+        self.bn1 = nn.BatchNorm1d(512)
 
-        self.fc2 = nn.Linear(1024, 512)
-        self.bn2 = nn.BatchNorm1d(512)
+        #self.fc2 = nn.Linear(1024, 512)
+        #self.bn2 = nn.BatchNorm1d(512)
+        self.dropout = nn.Dropout(0.2)
+        self.fc2 = nn.Linear(512, 37)
 
-        self.fc3 = nn.Linear(512, 37)
-
-        self.dropout = nn.Dropout(0.1)
+    
 
     def forward(self, x):
         x = self.conv1(x)
@@ -169,10 +170,10 @@ class NeuralNet(nn.Module):
         x = F.relu(self.bn1(self.fc1(x)))
         x = self.dropout(x)
 
-        x = F.relu(self.bn2(self.fc2(x)))
-        x = F.dropout(x)
+       # x = F.relu(self.bn2(self.fc2(x)))
+      #  x = self.dropout(x)
 
-        x = self.fc3(x)
+        x = self.fc2(x)
         return x
 
 
@@ -201,26 +202,27 @@ for epoch in range(30):
         running_loss += loss.item()
         #print(i)
 
-    train_acc = get_accuracy(net, train_loader)
+    #train_acc = get_accuracy(net, train_loader)
     val_acc = get_accuracy(net, val_loader)
 
     if val_acc > best_val_acc:
         best_val_acc = val_acc
         print(best_val_acc)
-        best_state_dict = copy.deepcopy(net.state_dict())
+        torch.save(net.state_dict(), "best_model.pth")
         print(f"Saved best model with val acc: {val_acc:.2f}%")
     print(f"Loss: {running_loss / len(train_loader):.4f}")
-    print(f"Train Accuracy: {train_acc:.2f}%")
+   # print(f"Train Accuracy: {train_acc:.2f}%")
     print(f"Validation Accuracy: {val_acc:.2f}%")
     print("\n")
 
     scheduler.step()
-torch.save(best_state_dict, 'trained_model.pth')
-net.load_state_dict(torch.load("trained_model.pth", map_location=device))
-val_acc_loaded = get_accuracy(net, val_loader)
+
+best_model = NeuralNet()
+best_model.load_state_dict(torch.load("best_model.pth"))
+val_acc_loaded = get_accuracy(best_model, val_loader)
 
 print(f"Best val accuracy recorded: {best_val_acc:.2f}%")
 print(f"Validation accuracy after loading: {val_acc_loaded:.2f}%")
-test_acc = get_accuracy(net, test_loader)
+test_acc = get_accuracy(best_model, test_loader)
 
 print(f"Test Accuracy: {test_acc:.2f}%")
