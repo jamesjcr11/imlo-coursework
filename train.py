@@ -159,10 +159,10 @@ class NeuralNet(nn.Module):
     def __init__(self):
         super().__init__()
 
-        self.conv1 = ConvBlock(3, 32)
-        self.conv2 = ConvBlock(32, 64)
-        self.conv3 = ConvBlock(64, 128)
-        self.conv4 = ConvBlock(128, 256)
+        self.conv1 = ConvBlock(3, 64)
+        self.conv2 = ConvBlock(64, 128)
+        self.conv3 = ConvBlock(128, 256)
+        self.conv4 = ConvBlock(256, 256)
         self.conv5 = ConvBlock(256, 256)
 
         self.gap = nn.AdaptiveAvgPool2d((4, 4))
