@@ -144,10 +144,11 @@ class ConvBlock(nn.Module):
     def forward(self, x):
         identity = self.skip(x)
 
-        out = F.relu(self.bn1(self.conv1(x)))
+        out = F.silu(self.bn1(self.conv1(x)))
         out = self.bn2(self.conv2(out))
 
-        out = F.relu(out + identity)
+        out = out + identity
+        out = F.silu(out)
         return self.pool(out)
 
 
@@ -180,7 +181,7 @@ class NeuralNet(nn.Module):
         x = self.gap(x)
         x = torch.flatten(x, 1)
 
-        x = F.relu(self.bn1(self.fc1(x)))
+        x = F.silu(self.bn1(self.fc1(x)))
         x = self.dropout(x)
 
         x = self.fc2(x)
