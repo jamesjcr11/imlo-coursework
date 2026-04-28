@@ -55,7 +55,7 @@ mask_data = datasets.OxfordIIITPet(
 
 
 targets = np.array([img_data[i][1] for i in range(len(img_data))])
-sss = StratifiedShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
+sss = StratifiedShuffleSplit(n_splits=1, test_size=0.1, random_state=42)
 
 train_idx, val_idx = next(sss.split(np.zeros(len(targets)), targets))
 
