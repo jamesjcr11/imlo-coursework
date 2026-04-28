@@ -78,7 +78,7 @@ class PetDataset(torch.utils.data.Dataset):
     img = np.array(img).astype(np.float32)
 
     foreground = (np.array(mask) > 0)
-    img[~foreground] *= 0
+    img[~foreground] *= 1
 
     img = Image.fromarray(np.clip(img, 0, 255).astype(np.uint8))
 
@@ -163,13 +163,14 @@ class NeuralNet(nn.Module):
         self.conv2 = ConvBlock(32, 64)
         self.conv3 = ConvBlock(64, 128)
         self.conv4 = ConvBlock(128, 256)
+        self.conv5 = ConvBlock(256, 256)
 
         self.gap = nn.AdaptiveAvgPool2d((4, 4))
 
         self.fc1 = nn.Linear(256 * 4* 4, 256)
         self.bn1 = nn.BatchNorm1d(256)
 
-        self.dropout = nn.Dropout(0.35)
+        self.dropout = nn.Dropout(0.4)
         self.fc2 = nn.Linear(256, 37)
 
     def forward(self, x):
@@ -177,6 +178,7 @@ class NeuralNet(nn.Module):
         x = self.conv2(x)
         x = self.conv3(x)
         x = self.conv4(x)
+        x = self.conv5(x)
 
         x = self.gap(x)
         x = torch.flatten(x, 1)
