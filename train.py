@@ -19,9 +19,9 @@ np.random.seed(42)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 train_transform = transforms.Compose([
-    transforms.Resize((256, 256)),
+    transforms.Resize((160, 160)),
 
-    #transforms.RandomResizedCrop(224, scale=(0.9, 1.0)),
+    #transforms.RandomResizedCrop(160, scale=(0.85, 1.0)),
     transforms.RandomHorizontalFlip(p=0.5),
     transforms.RandomRotation(5),
     transforms.ColorJitter(0.1, 0.1, 0.1),
@@ -30,7 +30,7 @@ train_transform = transforms.Compose([
 ])
 
 eval_transform = transforms.Compose([
-    transforms.Resize((256, 256)),
+    transforms.Resize((160, 160)),
     transforms.ToTensor(),
     transforms.Normalize((0.485, 0.456, 0.406),(0.229, 0.224, 0.225))
 ])
@@ -90,20 +90,6 @@ class PetDataset(torch.utils.data.Dataset):
 
 #/////////////////////////////////////////////////////////////////
 
-#train_data =  datasets.OxfordIIITPet(
- #   root="./data",
-   # split="trainval",
-  #  download=False,
-    #transform=train_transform,
-#)
-
-
-#val_data = datasets.OxfordIIITPet(
- #   root="./data",
-  #  split="trainval",
-   # download=False,
-    #transform=eval_transform
-#)
 
 train_data = PetDataset(img_data, mask_data, train_transform)
 val_data = PetDataset(img_data, mask_data, eval_transform)
@@ -196,7 +182,8 @@ class NeuralNet(nn.Module):
 
         #self.fc2 = nn.Linear(1024, 512)
         #self.bn2 = nn.BatchNorm1d(512)
-        self.dropout = nn.Dropout(0.5)
+
+        self.dropout = nn.Dropout(0.35)
         self.fc2 = nn.Linear(512, 37)
 
 
@@ -215,7 +202,7 @@ class NeuralNet(nn.Module):
         x = self.dropout(x)
 
        # x = F.relu(self.bn2(self.fc2(x)))
-       # x = self.dropout(x)
+        #x = self.dropout(x)
 
         x = self.fc2(x)
         return x
@@ -227,7 +214,7 @@ class NeuralNet(nn.Module):
 net = NeuralNet().to(device)
 #loss_function = nn.CrossEntropyLoss(label_smoothing=0.1)
 loss_function = nn.CrossEntropyLoss()
-optimizer = optim.Adam(net.parameters(), lr=0.001, weight_decay=0.0001)
+optimizer = optim.Adam(net.parameters(), lr=0.001, weight_decay=0.0005)
 scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=30)
 
 
