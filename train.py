@@ -24,7 +24,8 @@ train_transform = transforms.Compose([
     #transforms.RandomResizedCrop(160, scale=(0.85, 1.0)),
     transforms.RandomHorizontalFlip(p=0.5),
     transforms.RandomRotation(5),
-    transforms.ColorJitter(0.1, 0.1, 0.1),
+    transforms.RandomAffine(degrees=10, translate=(0.1, 0.1)),
+    transforms.ColorJitter(0.2, 0.2, 0.2),
     transforms.ToTensor(),
     transforms.Normalize((0.485, 0.456, 0.406),(0.229, 0.224, 0.225))
 ])
@@ -67,14 +68,14 @@ class PetDataset(torch.utils.data.Dataset):
     self.img_data = img_data
     self.mask_data = mask_data
     self.transform = transform
-  
+
   def __len__(self):
     return len(self.img_data)
 
   def __getitem__(self, idx):
     img, label = self.img_data[idx]
     _, mask = self.mask_data[idx]
-  
+
     img = np.array(img).astype(np.float32)
 
     foreground = (np.array(mask) > 0)
@@ -84,7 +85,7 @@ class PetDataset(torch.utils.data.Dataset):
 
     if self.transform:
       img = self.transform(img)
-    
+
     return img, label
 
 
@@ -170,7 +171,7 @@ class NeuralNet(nn.Module):
         self.fc1 = nn.Linear(256 * 4* 4, 256)
         self.bn1 = nn.BatchNorm1d(256)
 
-        self.dropout = nn.Dropout(0.4)
+        self.dropout = nn.Dropout(0.3)
         self.fc2 = nn.Linear(256, 37)
 
     def forward(self, x):
