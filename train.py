@@ -13,8 +13,8 @@ import copy
 from sklearn.model_selection import StratifiedShuffleSplit
 from torch.utils.data import Subset
 
-torch.manual_seed(42)
-np.random.seed(42)
+torch.manual_seed(7)
+np.random.seed(7)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -26,14 +26,14 @@ train_transform = transforms.Compose([
     transforms.RandomRotation(5),
     transforms.RandomAffine(degrees=10, translate=(0.1, 0.1)),
     transforms.ColorJitter(0.2, 0.2, 0.2),
-    transforms.ToTensor(),
-    transforms.Normalize((0.485, 0.456, 0.406),(0.229, 0.224, 0.225))
+    #transforms.ToTensor(),
+    #transforms.Normalize((0.485, 0.456, 0.406),(0.229, 0.224, 0.225))
 ])
 
 eval_transform = transforms.Compose([
     transforms.Resize((160, 160)),
-    transforms.ToTensor(),
-    transforms.Normalize((0.485, 0.456, 0.406),(0.229, 0.224, 0.225))
+    #transforms.ToTensor(),
+    #transforms.Normalize((0.485, 0.456, 0.406),(0.229, 0.224, 0.225))
 ])
 
 
@@ -56,7 +56,7 @@ mask_data = datasets.OxfordIIITPet(
 
 
 targets = np.array([img_data[i][1] for i in range(len(img_data))])
-sss = StratifiedShuffleSplit(n_splits=1, test_size=0.1, random_state=42)
+sss = StratifiedShuffleSplit(n_splits=1, test_size=0.1, random_state=7)
 
 train_idx, val_idx = next(sss.split(np.zeros(len(targets)), targets))
 
@@ -69,6 +69,14 @@ class PetDataset(torch.utils.data.Dataset):
     self.mask_data = mask_data
     self.transform = transform
 
+    self.to_tensor = transforms.ToTensor()
+    self.resize = transforms.Resize((160, 160))
+
+    self.norm = transforms.Normalize(
+            mean=(0.5,0.5,0.5,0.5),
+            std=(0.5,0.5,0.5,0.5)
+        )
+
   def __len__(self):
     return len(self.img_data)
 
@@ -76,17 +84,21 @@ class PetDataset(torch.utils.data.Dataset):
     img, label = self.img_data[idx]
     _, mask = self.mask_data[idx]
 
-    img = np.array(img).astype(np.float32)
 
-    foreground = (np.array(mask) > 0)
-    img[~foreground] *= 1
-
-    img = Image.fromarray(np.clip(img, 0, 255).astype(np.uint8))
+    mask = self.resize(mask)
+    img = self.resize(img)
 
     if self.transform:
-      img = self.transform(img)
+        img = self.transform(img)
 
-    return img, label
+
+    img = self.to_tensor(img)
+    mask = self.to_tensor(mask)
+
+    x = torch.cat([img, mask], dim=0)
+
+    x = self.norm(x)
+    return x, label
 
 
 #/////////////////////////////////////////////////////////////////
@@ -127,7 +139,7 @@ val_loader = torch.utils.data.DataLoader(val_data, batch_size = 64, shuffle=Fals
 
 
 class ConvBlock(nn.Module):
-    def __init__(self, in_c, out_c):
+    def __init__(self, in_c, out_c, do_pool=True):
         super().__init__()
 
         self.conv1 = nn.Conv2d(in_c, out_c, kernel_size=3, stride=1, padding=1)
@@ -138,8 +150,12 @@ class ConvBlock(nn.Module):
 
         self.skip = nn.Identity()
         if in_c != out_c:
-            self.skip = nn.Conv2d(in_c, out_c, kernel_size=1, stride=1, padding=0)
+            self.skip = nn.Sequential(
+                nn.Conv2d(in_c, out_c, kernel_size=1, stride=1, padding=0),
+                nn.BatchNorm2d(out_c)
+            )
 
+        self.do_pool = do_pool
         self.pool = nn.MaxPool2d(2)
 
     def forward(self, x):
@@ -150,7 +166,11 @@ class ConvBlock(nn.Module):
 
         out = out + identity
         out = F.silu(out)
-        return self.pool(out)
+
+        if self.do_pool:
+            out = self.pool(out)
+
+        return out
 
 
 #///////////////////////////////////////////////////////////////
@@ -160,15 +180,15 @@ class NeuralNet(nn.Module):
     def __init__(self):
         super().__init__()
 
-        self.conv1 = ConvBlock(3, 64)
+        self.conv1 = ConvBlock(4, 64)
         self.conv2 = ConvBlock(64, 128)
         self.conv3 = ConvBlock(128, 256)
-        self.conv4 = ConvBlock(256, 256)
-        self.conv5 = ConvBlock(256, 256)
+        self.conv4 = ConvBlock(256, 384)
+        self.conv5 = ConvBlock(384, 512)
 
         self.gap = nn.AdaptiveAvgPool2d((4, 4))
 
-        self.fc1 = nn.Linear(256 * 4* 4, 256)
+        self.fc1 = nn.Linear(512 * 4* 4, 256)
         self.bn1 = nn.BatchNorm1d(256)
 
         self.dropout = nn.Dropout(0.3)
@@ -196,7 +216,7 @@ class NeuralNet(nn.Module):
 net = NeuralNet().to(device)
 #loss_function = nn.CrossEntropyLoss(label_smoothing=0.1)
 loss_function = nn.CrossEntropyLoss()
-optimizer = optim.Adam(net.parameters(), lr=0.001, weight_decay=0.001)
+optimizer = optim.Adam(net.parameters(), lr=0.0003, weight_decay=0.001)
 scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=30)
 
 
@@ -232,10 +252,11 @@ for epoch in range(30):
 
     running_loss = 0.0
     for i, data in enumerate(train_loader, 0):
-        inputs, labels = data
-        inputs, labels = inputs.to(device), labels.to(device)
+        images, labels = data
+        images, labels = images.to(device), labels.to(device)
+
         optimizer.zero_grad()
-        outputs = net(inputs)
+        outputs = net(images)
         loss = loss_function(outputs, labels)
         loss.backward()
         optimizer.step()
