@@ -147,6 +147,8 @@ class ConvBlock(nn.Module):
 
         self.conv2 = nn.Conv2d(out_c, out_c, kernel_size=3, stride=1, padding=1)
         self.bn2 = nn.BatchNorm2d(out_c)
+        self.conv3 = nn.Conv2d(out_c, out_c, kernel_size=3, padding=1, bias=False)
+        self.bn3 = nn.BatchNorm2d(out_c)
 
         self.skip = nn.Identity()
         if in_c != out_c:
@@ -162,7 +164,8 @@ class ConvBlock(nn.Module):
         identity = self.skip(x)
 
         out = F.silu(self.bn1(self.conv1(x)))
-        out = self.bn2(self.conv2(out))
+        out = F.silu(self.bn2(self.conv2(out)))
+        out = self.bn3(self.conv3(out))
 
         out = out + identity
         out = F.silu(out)
