@@ -8,8 +8,10 @@ import torch.optim as optim
 
 import torchvision
 import torchvision.transforms as transforms
+from torchvision.transforms import InterpolationMode
 import torchvision.datasets as datasets
 import copy
+from torchvision.transforms import v2
 from sklearn.model_selection import StratifiedShuffleSplit
 from torch.utils.data import Subset
 
@@ -19,43 +21,58 @@ np.random.seed(7)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 train_transform = transforms.Compose([
-    transforms.Resize((160, 160)),
-
-    #transforms.RandomResizedCrop(160, scale=(0.85, 1.0)),
+    transforms.Resize((200,200)),
+    transforms.CenterCrop(180),
+    #transforms.RandomResizedCrop(180, scale=(0.7, 1.0)),
     transforms.RandomHorizontalFlip(p=0.5),
     transforms.RandomRotation(5),
     transforms.RandomAffine(degrees=10, translate=(0.1, 0.1)),
     transforms.ColorJitter(0.2, 0.2, 0.2),
-    #transforms.ToTensor(),
-    #transforms.Normalize((0.485, 0.456, 0.406),(0.229, 0.224, 0.225))
+    transforms.ToTensor(),
+    transforms.Normalize((0.485, 0.456, 0.406),(0.229, 0.224, 0.225))
 ])
 
-eval_transform = transforms.Compose([
-    transforms.Resize((160, 160)),
-    #transforms.ToTensor(),
-    #transforms.Normalize((0.485, 0.456, 0.406),(0.229, 0.224, 0.225))
+eval_transform = transforms.Compose ([
+    transforms.Resize((200, 200)),
+    transforms.CenterCrop(180),
+    transforms.ToTensor(),
+    transforms.Normalize((0.485, 0.456, 0.406),(0.229, 0.224, 0.225))
 ])
 
 
-img_data = datasets.OxfordIIITPet(
+base_data = datasets.OxfordIIITPet(
     root="./data",
     split="trainval",
     download=True,
-    transform=None,
-    target_types="category"
+    transform=None
 )
 
-mask_data = datasets.OxfordIIITPet(
+
+train_data =  datasets.OxfordIIITPet(
     root="./data",
     split="trainval",
-    download=True,
-    transform=None,
-    target_types="segmentation"
+    download=False,
+    transform=train_transform,
 )
 
 
 
-targets = np.array([img_data[i][1] for i in range(len(img_data))])
+val_data = datasets.OxfordIIITPet(
+    root="./data",
+    split="trainval",
+    download=False,
+    transform=eval_transform
+)
+
+test_data = datasets.OxfordIIITPet(
+    root="./data",
+    split="test",
+    download=True,
+    transform=eval_transform,
+)
+
+
+targets = np.array([base_data[i][1] for i in range(len(base_data))])
 sss = StratifiedShuffleSplit(n_splits=1, test_size=0.1, random_state=7)
 
 train_idx, val_idx = next(sss.split(np.zeros(len(targets)), targets))
@@ -63,73 +80,10 @@ train_idx, val_idx = next(sss.split(np.zeros(len(targets)), targets))
 
 #//////////////////////////////////////////////////////////////////
 
-class PetDataset(torch.utils.data.Dataset):
-  def __init__(self, img_data, mask_data, transform=None):
-    self.img_data = img_data
-    self.mask_data = mask_data
-    self.transform = transform
-
-    self.to_tensor = transforms.ToTensor()
-    self.resize = transforms.Resize((160, 160))
-
-    self.norm = transforms.Normalize(
-            mean=(0.5,0.5,0.5,0.5),
-            std=(0.5,0.5,0.5,0.5)
-        )
-
-  def __len__(self):
-    return len(self.img_data)
-
-  def __getitem__(self, idx):
-    img, label = self.img_data[idx]
-    _, mask = self.mask_data[idx]
-
-
-    mask = self.resize(mask)
-    img = self.resize(img)
-
-    if self.transform:
-        img = self.transform(img)
-
-
-    img = self.to_tensor(img)
-    mask = self.to_tensor(mask)
-
-    x = torch.cat([img, mask], dim=0)
-
-    x = self.norm(x)
-    return x, label
-
-
-#/////////////////////////////////////////////////////////////////
-
-
-train_data = PetDataset(img_data, mask_data, train_transform)
-val_data = PetDataset(img_data, mask_data, eval_transform)
 
 train_data = Subset(train_data, train_idx)
 val_data = Subset(val_data, val_idx)
 
-
-
-
-test_img = datasets.OxfordIIITPet(
-    root="./data",
-    split="test",
-    download=True,
-    transform=None,
-    target_types = "category"
-)
-
-test_mask = datasets.OxfordIIITPet(
-    root="./data",
-    split="test",
-    download=True,
-    target_types="segmentation"
-)
-
-
-test_data = PetDataset(test_img, test_mask, eval_transform)
 
 
 test_loader = torch.utils.data.DataLoader(test_data, batch_size = 64, shuffle=False, num_workers=0)
@@ -147,7 +101,7 @@ class ConvBlock(nn.Module):
 
         self.conv2 = nn.Conv2d(out_c, out_c, kernel_size=3, stride=1, padding=1)
         self.bn2 = nn.BatchNorm2d(out_c)
-        self.conv3 = nn.Conv2d(out_c, out_c, kernel_size=3, padding=1, bias=False)
+        self.conv3 = nn.Conv2d(out_c, out_c, kernel_size=3, stride=1, padding=1)
         self.bn3 = nn.BatchNorm2d(out_c)
 
         self.skip = nn.Identity()
@@ -183,15 +137,15 @@ class NeuralNet(nn.Module):
     def __init__(self):
         super().__init__()
 
-        self.conv1 = ConvBlock(4, 64)
+        self.conv1 = ConvBlock(3, 64)
         self.conv2 = ConvBlock(64, 128)
         self.conv3 = ConvBlock(128, 256)
         self.conv4 = ConvBlock(256, 384)
         self.conv5 = ConvBlock(384, 512)
 
-        self.gap = nn.AdaptiveAvgPool2d((4, 4))
+        self.gap = nn.AdaptiveAvgPool2d((2,2))
 
-        self.fc1 = nn.Linear(512 * 4* 4, 256)
+        self.fc1 = nn.Linear(512 * 2 * 2, 256)
         self.bn1 = nn.BatchNorm1d(256)
 
         self.dropout = nn.Dropout(0.3)
@@ -257,6 +211,8 @@ for epoch in range(30):
     for i, data in enumerate(train_loader, 0):
         images, labels = data
         images, labels = images.to(device), labels.to(device)
+
+       
 
         optimizer.zero_grad()
         outputs = net(images)
