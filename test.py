@@ -5,12 +5,15 @@ import torch.nn.functional as F
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 
+#Set seed for reproducibility
 torch.manual_seed(7)
 np.random.seed(7)
 
+# Use GPU if available, otherwise use CPU.
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
+# Define data augmentation and preprocessing for evaluation data
 eval_transform = transforms.Compose ([
     transforms.Resize((200, 200)),
     transforms.CenterCrop(180),
@@ -19,7 +22,7 @@ eval_transform = transforms.Compose ([
 ])
 
 
-
+# Load test data
 test_data = datasets.OxfordIIITPet(
     root="./data",
     split="test",
@@ -36,14 +39,18 @@ class ConvBlock(nn.Module):
     def __init__(self, in_c, out_c, do_pool=True):
         super().__init__()
 
+        # Three convolutional layers with batch normalisation
         self.conv1 = nn.Conv2d(in_c, out_c, kernel_size=3, stride=1, padding=1)
         self.bn1 = nn.BatchNorm2d(out_c)
 
         self.conv2 = nn.Conv2d(out_c, out_c, kernel_size=3, stride=1, padding=1)
         self.bn2 = nn.BatchNorm2d(out_c)
+
         self.conv3 = nn.Conv2d(out_c, out_c, kernel_size=3, stride=1, padding=1)
         self.bn3 = nn.BatchNorm2d(out_c)
 
+
+        # Skip connection allows the input to be added to the output of the convolutional layers. If the number of channels changes, we use a 1x1 convolution to match the dimensions.
         self.skip = nn.Identity()
         if in_c != out_c:
             self.skip = nn.Sequential(
@@ -51,8 +58,10 @@ class ConvBlock(nn.Module):
                 nn.BatchNorm2d(out_c)
             )
 
+        # Optional downsampling using max pooling
         self.do_pool = do_pool
         self.pool = nn.MaxPool2d(2)
+
 
     def forward(self, x):
         identity = self.skip(x)
@@ -74,14 +83,17 @@ class NeuralNet(nn.Module):
     def __init__(self):
         super().__init__()
 
+        # Feature extraction using 5 convolutional blocks.
         self.conv1 = ConvBlock(3, 64)
         self.conv2 = ConvBlock(64, 128)
         self.conv3 = ConvBlock(128, 256)
         self.conv4 = ConvBlock(256, 384)
         self.conv5 = ConvBlock(384, 512)
 
+        # Reduce spatial dimensions to 2x2 using global average pooling
         self.gap = nn.AdaptiveAvgPool2d((2,2))
 
+        # Fully connected layers for classification
         self.fc1 = nn.Linear(512 * 2 * 2, 256)
         self.bn1 = nn.BatchNorm1d(256)
 
@@ -103,6 +115,7 @@ class NeuralNet(nn.Module):
 
         x = self.fc2(x)
         return x
+
 
 
 
@@ -130,5 +143,6 @@ def get_accuracy(model, loader):
 net = NeuralNet().to(device)
 net.load_state_dict(torch.load("model.pth", map_location=device))
 
+# Evaluate the model on the test set and print the accuracy
 test_acc = get_accuracy(net, test_loader)
 print(f"Test Accuracy: {test_acc:.2f}%")

@@ -6,11 +6,14 @@ import torch.optim as optim
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 
+# Set seed for reproducibility
 torch.manual_seed(7)
 np.random.seed(7)
 
+# Use GPU if available, otherwise use CPU.
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+# Define data augmentation and preprocessing for training data
 train_transform = transforms.Compose([
     transforms.Resize((200,200)),
     transforms.CenterCrop(180),
@@ -22,7 +25,7 @@ train_transform = transforms.Compose([
     transforms.Normalize((0.485, 0.456, 0.406),(0.229, 0.224, 0.225))
 ])
 
-
+# Load training data
 train_data =  datasets.OxfordIIITPet(
     root="./data",
     split="trainval",
@@ -39,14 +42,18 @@ class ConvBlock(nn.Module):
     def __init__(self, in_c, out_c, do_pool=True):
         super().__init__()
 
+        # Three convolutional layers with batch normalisation
         self.conv1 = nn.Conv2d(in_c, out_c, kernel_size=3, stride=1, padding=1)
         self.bn1 = nn.BatchNorm2d(out_c)
 
         self.conv2 = nn.Conv2d(out_c, out_c, kernel_size=3, stride=1, padding=1)
         self.bn2 = nn.BatchNorm2d(out_c)
+
         self.conv3 = nn.Conv2d(out_c, out_c, kernel_size=3, stride=1, padding=1)
         self.bn3 = nn.BatchNorm2d(out_c)
 
+
+        # Skip connection allows the input to be added to the output of the convolutional layers. If the number of channels changes, we use a 1x1 convolution to match the dimensions.
         self.skip = nn.Identity()
         if in_c != out_c:
             self.skip = nn.Sequential(
@@ -54,6 +61,7 @@ class ConvBlock(nn.Module):
                 nn.BatchNorm2d(out_c)
             )
 
+        # Optional downsampling using max pooling
         self.do_pool = do_pool
         self.pool = nn.MaxPool2d(2)
 
@@ -78,14 +86,17 @@ class NeuralNet(nn.Module):
     def __init__(self):
         super().__init__()
 
+        # Feature extraction using 5 convolutional blocks.
         self.conv1 = ConvBlock(3, 64)
         self.conv2 = ConvBlock(64, 128)
         self.conv3 = ConvBlock(128, 256)
         self.conv4 = ConvBlock(256, 384)
         self.conv5 = ConvBlock(384, 512)
 
+        # Reduce spatial dimensions to 2x2 using global average pooling
         self.gap = nn.AdaptiveAvgPool2d((2,2))
 
+        # Fully connected layers for classification
         self.fc1 = nn.Linear(512 * 2 * 2, 256)
         self.bn1 = nn.BatchNorm1d(256)
 
@@ -144,10 +155,14 @@ for epoch in range(30):
     print(f"Training epoch {epoch  + 1} ...")
 
     running_loss = 0.0
+
+    # Train over all batches
     for i, data in enumerate(train_loader, 0):
         images, labels = data
         images, labels = images.to(device), labels.to(device)
         optimizer.zero_grad()
+        
+        # Forward pass, compute loss, backward pass, and update weights
         outputs = net(images)
         loss = loss_function(outputs, labels)
         loss.backward()
@@ -156,6 +171,7 @@ for epoch in range(30):
         running_loss += loss.item()
 
 
+    # Report training loss and accuracy at the end of each epoch
     print(f"Training Loss: {running_loss / len(train_loader):.4f}")
     train_acc = get_accuracy(net, train_loader)
     print(f"Train Accuracy: {train_acc:.2f}%")
