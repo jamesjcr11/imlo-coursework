@@ -23,7 +23,6 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 train_transform = transforms.Compose([
     transforms.Resize((200,200)),
     transforms.CenterCrop(180),
-    #transforms.RandomResizedCrop(180, scale=(0.7, 1.0)),
     transforms.RandomHorizontalFlip(p=0.5),
     transforms.RandomRotation(5),
     transforms.RandomAffine(degrees=10, translate=(0.1, 0.1)),
@@ -32,49 +31,16 @@ train_transform = transforms.Compose([
     transforms.Normalize((0.485, 0.456, 0.406),(0.229, 0.224, 0.225))
 ])
 
-eval_transform = transforms.Compose ([
-    transforms.Resize((200, 200)),
-    transforms.CenterCrop(180),
-    transforms.ToTensor(),
-    transforms.Normalize((0.485, 0.456, 0.406),(0.229, 0.224, 0.225))
-])
-
-
-base_data = datasets.OxfordIIITPet(
-    root="./data",
-    split="trainval",
-    download=True,
-    transform=None
-)
-
 
 train_data =  datasets.OxfordIIITPet(
     root="./data",
     split="trainval",
-    download=False,
+    download=True,
     transform=train_transform,
 )
 
 
-
-val_data = datasets.OxfordIIITPet(
-    root="./data",
-    split="trainval",
-    download=False,
-    transform=eval_transform
-)
-
-test_data = datasets.OxfordIIITPet(
-    root="./data",
-    split="test",
-    download=True,
-    transform=eval_transform,
-)
-
-
-test_loader = torch.utils.data.DataLoader(test_data, batch_size = 64, shuffle=False, num_workers=0)
 train_loader = torch.utils.data.DataLoader(train_data, batch_size = 64, shuffle=True, num_workers=0)
-val_loader = torch.utils.data.DataLoader(val_data, batch_size = 64, shuffle=False, num_workers=0)
 
 
 
@@ -100,6 +66,7 @@ class ConvBlock(nn.Module):
         self.do_pool = do_pool
         self.pool = nn.MaxPool2d(2)
 
+
     def forward(self, x):
         identity = self.skip(x)
 
@@ -116,7 +83,6 @@ class ConvBlock(nn.Module):
         return out
 
 
-#///////////////////////////////////////////////////////////////
 
 
 class NeuralNet(nn.Module):
@@ -154,16 +120,6 @@ class NeuralNet(nn.Module):
         return x
 
 
-#////////////////////////////////////////////////////////////////
-
-net = NeuralNet().to(device)
-#loss_function = nn.CrossEntropyLoss(label_smoothing=0.1)
-loss_function = nn.CrossEntropyLoss()
-optimizer = optim.Adam(net.parameters(), lr=0.0003, weight_decay=0.001)
-scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=30)
-
-
-#////////////////////////////////////////////////////////////////
 
 def get_accuracy(model, loader):
     correct = 0
@@ -185,7 +141,13 @@ def get_accuracy(model, loader):
     return 100 * correct / total
 
 
-#/////////////////////////////////////////////////////////////////
+
+net = NeuralNet().to(device)
+loss_function = nn.CrossEntropyLoss()
+optimizer = optim.Adam(net.parameters(), lr=0.0003, weight_decay=0.001)
+scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=30)
+
+
 
 best_val_acc = 0.0
 best_state_dict = None
@@ -197,9 +159,6 @@ for epoch in range(30):
     for i, data in enumerate(train_loader, 0):
         images, labels = data
         images, labels = images.to(device), labels.to(device)
-
-
-
         optimizer.zero_grad()
         outputs = net(images)
         loss = loss_function(outputs, labels)
@@ -207,31 +166,15 @@ for epoch in range(30):
         optimizer.step()
 
         running_loss += loss.item()
-        #print(i)
+       
 
+    print(f"Training Loss: {running_loss / len(train_loader):.4f}")
     train_acc = get_accuracy(net, train_loader)
-    #val_acc = get_accuracy(net, val_loader)
-    print(f"Loss: {running_loss / len(train_loader):.4f}")
     print(f"Train Accuracy: {train_acc:.2f}%")
-    #print(f"Validation Accuracy: {val_acc:.2f}%")
-    test_acc = get_accuracy(net, test_loader)
-
-    print(f"Test Accuracy: {test_acc:.2f}%")
-
     print("\n")
 
     scheduler.step()
 
 torch.save(net.state_dict(), "model.pth")
 
-best_model = NeuralNet().to(device)
-best_model.load_state_dict(torch.load("model.pth", map_location=device))
-#val_acc_loaded = get_accuracy(best_model, val_loader)
-
-#print(f"Best val accuracy recorded: {best_val_acc:.2f}%")
-#print(f"Validation accuracy after loading: {val_acc_loaded:.2f}%")
-train_acc = get_accuracy(net, train_loader)
-print(f"Train Accuracy: {train_acc:.2f}%")
-test_acc = get_accuracy(best_model, test_loader)
-
-print(f"Test Accuracy: {test_acc:.2f}%")
+print(f"Final Train Accuracy: {train_acc:.2f}%")
