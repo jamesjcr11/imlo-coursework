@@ -1,19 +1,10 @@
 import numpy as np
-from PIL import Image
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-
-import torchvision
 import torchvision.transforms as transforms
-from torchvision.transforms import InterpolationMode
 import torchvision.datasets as datasets
-import copy
-from torchvision.transforms import v2
-from sklearn.model_selection import StratifiedShuffleSplit
-from torch.utils.data import Subset
 
 torch.manual_seed(7)
 np.random.seed(7)
@@ -83,8 +74,6 @@ class ConvBlock(nn.Module):
         return out
 
 
-
-
 class NeuralNet(nn.Module):
     def __init__(self):
         super().__init__()
@@ -118,7 +107,6 @@ class NeuralNet(nn.Module):
 
         x = self.fc2(x)
         return x
-
 
 
 def get_accuracy(model, loader):
@@ -166,7 +154,7 @@ for epoch in range(30):
         optimizer.step()
 
         running_loss += loss.item()
-       
+
 
     print(f"Training Loss: {running_loss / len(train_loader):.4f}")
     train_acc = get_accuracy(net, train_loader)
@@ -176,5 +164,4 @@ for epoch in range(30):
     scheduler.step()
 
 torch.save(net.state_dict(), "model.pth")
-
 print(f"Final Train Accuracy: {train_acc:.2f}%")
