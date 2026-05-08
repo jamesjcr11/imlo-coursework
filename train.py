@@ -72,20 +72,6 @@ test_data = datasets.OxfordIIITPet(
 )
 
 
-targets = np.array([base_data[i][1] for i in range(len(base_data))])
-sss = StratifiedShuffleSplit(n_splits=1, test_size=0.1, random_state=7)
-
-train_idx, val_idx = next(sss.split(np.zeros(len(targets)), targets))
-
-
-#//////////////////////////////////////////////////////////////////
-
-
-train_data = Subset(train_data, train_idx)
-val_data = Subset(val_data, val_idx)
-
-
-
 test_loader = torch.utils.data.DataLoader(test_data, batch_size = 64, shuffle=False, num_workers=0)
 train_loader = torch.utils.data.DataLoader(train_data, batch_size = 64, shuffle=True, num_workers=0)
 val_loader = torch.utils.data.DataLoader(val_data, batch_size = 64, shuffle=False, num_workers=0)
@@ -205,14 +191,14 @@ best_val_acc = 0.0
 best_state_dict = None
 
 for epoch in range(30):
-    print(f"Training epoch {epoch} ...")
+    print(f"Training epoch {epoch  + 1} ...")
 
     running_loss = 0.0
     for i, data in enumerate(train_loader, 0):
         images, labels = data
         images, labels = images.to(device), labels.to(device)
 
-       
+
 
         optimizer.zero_grad()
         outputs = net(images)
@@ -223,27 +209,29 @@ for epoch in range(30):
         running_loss += loss.item()
         #print(i)
 
-    #train_acc = get_accuracy(net, train_loader)
-    val_acc = get_accuracy(net, val_loader)
-
-    if val_acc > best_val_acc:
-        best_val_acc = val_acc
-        print(best_val_acc)
-        torch.save(net.state_dict(), "best_model.pth")
-        print(f"Saved best model with val acc: {val_acc:.2f}%")
+    train_acc = get_accuracy(net, train_loader)
+    #val_acc = get_accuracy(net, val_loader)
     print(f"Loss: {running_loss / len(train_loader):.4f}")
-   # print(f"Train Accuracy: {train_acc:.2f}%")
-    print(f"Validation Accuracy: {val_acc:.2f}%")
+    print(f"Train Accuracy: {train_acc:.2f}%")
+    #print(f"Validation Accuracy: {val_acc:.2f}%")
+    test_acc = get_accuracy(net, test_loader)
+
+    print(f"Test Accuracy: {test_acc:.2f}%")
+
     print("\n")
 
     scheduler.step()
 
-best_model = NeuralNet().to(device)
-best_model.load_state_dict(torch.load("best_model.pth", map_location=device))
-val_acc_loaded = get_accuracy(best_model, val_loader)
+torch.save(net.state_dict(), "model.pth")
 
-print(f"Best val accuracy recorded: {best_val_acc:.2f}%")
-print(f"Validation accuracy after loading: {val_acc_loaded:.2f}%")
+best_model = NeuralNet().to(device)
+best_model.load_state_dict(torch.load("model.pth", map_location=device))
+#val_acc_loaded = get_accuracy(best_model, val_loader)
+
+#print(f"Best val accuracy recorded: {best_val_acc:.2f}%")
+#print(f"Validation accuracy after loading: {val_acc_loaded:.2f}%")
+train_acc = get_accuracy(net, train_loader)
+print(f"Train Accuracy: {train_acc:.2f}%")
 test_acc = get_accuracy(best_model, test_loader)
 
 print(f"Test Accuracy: {test_acc:.2f}%")
